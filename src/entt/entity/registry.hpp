@@ -26,6 +26,11 @@
 #include "utility.hpp"
 #include "view.hpp"
 
+
+
+struct game_scene;
+struct scene_entity;
+
 namespace entt {
 
 /**
@@ -40,6 +45,9 @@ namespace entt {
  */
 template<typename Entity>
 class basic_registry {
+    friend struct ::game_scene;
+    friend struct ::scene_entity;
+
     using entity_traits = entt_traits<Entity>;
     using poly_storage_type = typename poly_storage_traits<Entity>::storage_type;
     using basic_common_type = basic_sparse_set<Entity>;

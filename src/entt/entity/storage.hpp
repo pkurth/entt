@@ -19,6 +19,8 @@
 #include "fwd.hpp"
 #include "sparse_set.hpp"
 
+struct game_scene;
+
 namespace entt {
 
 /**
@@ -170,6 +172,8 @@ private:
  */
 template<typename Entity, typename Type, typename Allocator, typename>
 class basic_storage: public basic_sparse_set<Entity, typename std::allocator_traits<Allocator>::template rebind_alloc<Entity>> {
+    friend struct ::game_scene;
+
     static constexpr auto packed_page_v = ENTT_PACKED_PAGE;
 
     using allocator_traits = std::allocator_traits<Allocator>;
