@@ -1,9 +1,12 @@
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <gtest/gtest.h>
 #include <entt/core/hashed_string.hpp>
+#include <entt/core/type_traits.hpp>
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
+#include <entt/meta/node.hpp>
 #include <entt/meta/resolve.hpp>
 
 struct base_t {
@@ -109,7 +112,8 @@ struct MetaData: ::testing::Test {
         entt::meta<derived_t>()
             .type("derived"_hs)
             .base<base_t>()
-            .dtor<derived_t::destroy>();
+            .dtor<derived_t::destroy>()
+            .data<&base_t::value>("value_from_base"_hs);
 
         entt::meta<clazz_t>()
             .type("clazz"_hs)
@@ -151,6 +155,8 @@ struct MetaData: ::testing::Test {
         entt::meta_reset();
     }
 };
+
+using MetaDataDeathTest = MetaData;
 
 TEST_F(MetaData, Functionalities) {
     using namespace entt::literals;
@@ -606,13 +612,21 @@ TEST_F(MetaData, AsConstRef) {
     ASSERT_EQ(data.arity(), 1u);
     ASSERT_EQ(data.type(), entt::resolve<int>());
     ASSERT_EQ(data.arg(0u), entt::resolve<int>());
-    ASSERT_DEATH(data.get(instance).cast<int &>() = 3, "");
     ASSERT_EQ(data.get(instance).cast<const int &>(), 0);
     ASSERT_EQ(data.get(instance).cast<int>(), 0);
     ASSERT_EQ(instance.i, 0);
 }
 
-TEST_F(MetaData, FromBase) {
+TEST_F(MetaDataDeathTest, AsConstRef) {
+    using namespace entt::literals;
+
+    clazz_t instance{};
+    auto data = entt::resolve<clazz_t>().data("ci"_hs);
+
+    ASSERT_DEATH(data.get(instance).cast<int &>() = 3, "");
+}
+
+TEST_F(MetaData, SetGetBaseData) {
     using namespace entt::literals;
 
     auto type = entt::resolve<derived_t>();
@@ -622,6 +636,21 @@ TEST_F(MetaData, FromBase) {
 
     ASSERT_EQ(instance.value, 3);
     ASSERT_TRUE(type.data("value"_hs).set(instance, 42));
+    ASSERT_EQ(type.data("value"_hs).get(instance).cast<int>(), 42);
+    ASSERT_EQ(instance.value, 42);
+}
+
+TEST_F(MetaData, SetGetFromBase) {
+    using namespace entt::literals;
+
+    auto type = entt::resolve<derived_t>();
+    derived_t instance{};
+
+    ASSERT_TRUE(type.data("value_from_base"_hs));
+
+    ASSERT_EQ(instance.value, 3);
+    ASSERT_TRUE(type.data("value_from_base"_hs).set(instance, 42));
+    ASSERT_EQ(type.data("value_from_base"_hs).get(instance).cast<int>(), 42);
     ASSERT_EQ(instance.value, 42);
 }
 
@@ -654,6 +683,10 @@ TEST_F(MetaData, NameCollision) {
     ASSERT_NO_FATAL_FAILURE(entt::meta<clazz_t>().data<&clazz_t::j>("cj"_hs));
     ASSERT_FALSE(entt::resolve<clazz_t>().data("j"_hs));
     ASSERT_TRUE(entt::resolve<clazz_t>().data("cj"_hs));
+}
+
+TEST_F(MetaDataDeathTest, NameCollision) {
+    using namespace entt::literals;
 
     ASSERT_DEATH(entt::meta<clazz_t>().data<&clazz_t::j>("i"_hs), "");
 }

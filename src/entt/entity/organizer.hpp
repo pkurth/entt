@@ -4,11 +4,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+#include "../container/dense_map.hpp"
 #include "../core/type_info.hpp"
 #include "../core/type_traits.hpp"
+#include "../core/utility.hpp"
 #include "fwd.hpp"
 #include "helper.hpp"
 
@@ -24,8 +25,8 @@ namespace internal {
 template<typename>
 struct is_view: std::false_type {};
 
-template<typename Entity, typename... Component, typename... Exclude>
-struct is_view<basic_view<Entity, get_t<Component...>, exclude_t<Exclude...>>>: std::true_type {};
+template<typename... Get, typename... Exclude>
+struct is_view<basic_view<get_t<Get...>, exclude_t<Exclude...>>>: std::true_type {};
 
 template<typename Type>
 inline constexpr bool is_view_v = is_view<Type>::value;
@@ -33,60 +34,57 @@ inline constexpr bool is_view_v = is_view<Type>::value;
 template<typename Type, typename Override>
 struct unpack_type {
     using ro = std::conditional_t<
-        type_list_contains_v<Override, std::add_const_t<Type>> || (std::is_const_v<Type> && !type_list_contains_v<Override, std::remove_const_t<Type>>),
+        type_list_contains_v<Override, const Type> || (std::is_const_v<Type> && !type_list_contains_v<Override, std::remove_const_t<Type>>),
         type_list<std::remove_const_t<Type>>,
         type_list<>>;
 
     using rw = std::conditional_t<
-        type_list_contains_v<Override, std::remove_const_t<Type>> || (!std::is_const_v<Type> && !type_list_contains_v<Override, std::add_const_t<Type>>),
+        type_list_contains_v<Override, std::remove_const_t<Type>> || (!std::is_const_v<Type> && !type_list_contains_v<Override, const Type>),
         type_list<Type>,
         type_list<>>;
 };
 
-template<typename Entity, typename... Override>
-struct unpack_type<basic_registry<Entity>, type_list<Override...>> {
+template<typename... Args, typename... Override>
+struct unpack_type<basic_registry<Args...>, type_list<Override...>> {
     using ro = type_list<>;
     using rw = type_list<>;
 };
 
-template<typename Entity, typename... Override>
-struct unpack_type<const basic_registry<Entity>, type_list<Override...>>
-    : unpack_type<basic_registry<Entity>, type_list<Override...>> {};
+template<typename... Args, typename... Override>
+struct unpack_type<const basic_registry<Args...>, type_list<Override...>>
+    : unpack_type<basic_registry<Args...>, type_list<Override...>> {};
 
-template<typename Entity, typename... Component, typename... Exclude, typename... Override>
-struct unpack_type<basic_view<Entity, get_t<Component...>, exclude_t<Exclude...>>, type_list<Override...>> {
-    using ro = type_list_cat_t<type_list<Exclude...>, typename unpack_type<Component, type_list<Override...>>::ro...>;
-    using rw = type_list_cat_t<typename unpack_type<Component, type_list<Override...>>::rw...>;
+template<typename... Get, typename... Exclude, typename... Override>
+struct unpack_type<basic_view<get_t<Get...>, exclude_t<Exclude...>>, type_list<Override...>> {
+    using ro = type_list_cat_t<type_list<typename Exclude::value_type...>, typename unpack_type<constness_as_t<typename Get::value_type, Get>, type_list<Override...>>::ro...>;
+    using rw = type_list_cat_t<typename unpack_type<constness_as_t<typename Get::value_type, Get>, type_list<Override...>>::rw...>;
 };
 
-template<typename Entity, typename... Component, typename... Exclude, typename... Override>
-struct unpack_type<const basic_view<Entity, get_t<Component...>, exclude_t<Exclude...>>, type_list<Override...>>
-    : unpack_type<basic_view<Entity, get_t<Component...>, exclude_t<Exclude...>>, type_list<Override...>> {};
+template<typename... Get, typename... Exclude, typename... Override>
+struct unpack_type<const basic_view<get_t<Get...>, exclude_t<Exclude...>>, type_list<Override...>>
+    : unpack_type<basic_view<get_t<Get...>, exclude_t<Exclude...>>, type_list<Override...>> {};
 
 template<typename, typename>
-struct resource;
+struct resource_traits;
 
 template<typename... Args, typename... Req>
-struct resource<type_list<Args...>, type_list<Req...>> {
+struct resource_traits<type_list<Args...>, type_list<Req...>> {
     using args = type_list<std::remove_const_t<Args>...>;
     using ro = type_list_cat_t<typename unpack_type<Args, type_list<Req...>>::ro..., typename unpack_type<Req, type_list<>>::ro...>;
     using rw = type_list_cat_t<typename unpack_type<Args, type_list<Req...>>::rw..., typename unpack_type<Req, type_list<>>::rw...>;
 };
 
 template<typename... Req, typename Ret, typename... Args>
-resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> free_function_to_resource(Ret (*)(Args...));
+resource_traits<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> free_function_to_resource_traits(Ret (*)(Args...));
 
 template<typename... Req, typename Ret, typename Type, typename... Args>
-resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> constrained_function_to_resource(Ret (*)(Type &, Args...));
+resource_traits<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> constrained_function_to_resource_traits(Ret (*)(Type &, Args...));
 
 template<typename... Req, typename Ret, typename Class, typename... Args>
-resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> constrained_function_to_resource(Ret (Class::*)(Args...));
+resource_traits<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> constrained_function_to_resource_traits(Ret (Class::*)(Args...));
 
 template<typename... Req, typename Ret, typename Class, typename... Args>
-resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> constrained_function_to_resource(Ret (Class::*)(Args...) const);
-
-template<typename... Req>
-resource<type_list<>, type_list<Req...>> to_resource();
+resource_traits<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> constrained_function_to_resource_traits(Ret (Class::*)(Args...) const);
 
 } // namespace internal
 
@@ -104,12 +102,12 @@ resource<type_list<>, type_list<Req...>> to_resource();
  * goal of the tool. Instead, they are returned to the user in the form of a
  * graph that allows for safe execution.
  *
- * @tparam Entity A valid entity type (see entt_traits for more details).
+ * @tparam Registry Basic registry type.
  */
-template<typename Entity>
+template<typename Registry>
 class basic_organizer final {
-    using callback_type = void(const void *, basic_registry<Entity> &);
-    using prepare_type = void(basic_registry<Entity> &);
+    using callback_type = void(const void *, Registry &);
+    using prepare_type = void(Registry &);
     using dependency_type = std::size_t(const bool, const type_info **, const std::size_t);
 
     struct vertex_data final {
@@ -124,18 +122,18 @@ class basic_organizer final {
     };
 
     template<typename Type>
-    [[nodiscard]] static decltype(auto) extract(basic_registry<Entity> &reg) {
-        if constexpr(std::is_same_v<Type, basic_registry<Entity>>) {
+    [[nodiscard]] static decltype(auto) extract(Registry &reg) {
+        if constexpr(std::is_same_v<Type, Registry>) {
             return reg;
         } else if constexpr(internal::is_view_v<Type>) {
             return as_view{reg};
         } else {
-            return reg.template ctx_or_set<std::remove_reference_t<Type>>();
+            return reg.ctx().template emplace<std::remove_reference_t<Type>>();
         }
     }
 
     template<typename... Args>
-    [[nodiscard]] static auto to_args(basic_registry<Entity> &reg, type_list<Args...>) {
+    [[nodiscard]] static auto to_args(Registry &reg, type_list<Args...>) {
         return std::tuple<decltype(extract<Args>(reg))...>(extract<Args>(reg)...);
     }
 
@@ -153,7 +151,7 @@ class basic_organizer final {
 
     template<typename... RO, typename... RW>
     void track_dependencies(std::size_t index, const bool requires_registry, type_list<RO...>, type_list<RW...>) {
-        dependencies[type_hash<basic_registry<Entity>>::value()].emplace_back(index, requires_registry || (sizeof...(RO) + sizeof...(RW) == 0u));
+        dependencies[type_hash<Registry>::value()].emplace_back(index, requires_registry || (sizeof...(RO) + sizeof...(RW) == 0u));
         (dependencies[type_hash<RO>::value()].emplace_back(index, false), ...);
         (dependencies[type_hash<RW>::value()].emplace_back(index, true), ...);
     }
@@ -162,7 +160,7 @@ class basic_organizer final {
         const auto length = vertices.size();
         std::vector<bool> edges(length * length, false);
 
-        // creates the ajacency matrix
+        // creates the adjacency matrix
         for(const auto &deps: dependencies) {
             const auto last = deps.second.cend();
             auto it = deps.second.cbegin();
@@ -173,16 +171,14 @@ class basic_organizer final {
                     if(auto curr = it++; it != last) {
                         if(it->second) {
                             edges[curr->first * length + it->first] = true;
+                        } else if(const auto next = std::find_if(it, last, [](const auto &elem) { return elem.second; }); next != last) {
+                            for(; it != next; ++it) {
+                                edges[curr->first * length + it->first] = true;
+                                edges[it->first * length + next->first] = true;
+                            }
                         } else {
-                            if(const auto next = std::find_if(it, last, [](const auto &elem) { return elem.second; }); next != last) {
-                                for(; it != next; ++it) {
-                                    edges[curr->first * length + it->first] = true;
-                                    edges[it->first * length + next->first] = true;
-                                }
-                            } else {
-                                for(; it != next; ++it) {
-                                    edges[curr->first * length + it->first] = true;
-                                }
+                            for(; it != next; ++it) {
+                                edges[curr->first * length + it->first] = true;
                             }
                         }
                     }
@@ -229,8 +225,10 @@ class basic_organizer final {
     }
 
 public:
+    /*! Basic registry type. */
+    using registry_type = Registry;
     /*! @brief Underlying entity identifier. */
-    using entity_type = Entity;
+    using entity_type = typename registry_type::entity_type;
     /*! @brief Unsigned integer type. */
     using size_type = std::size_t;
     /*! @brief Raw task function type. */
@@ -256,7 +254,7 @@ public:
          * @param length The length of the user-supplied buffer.
          * @return The number of type info objects written to the buffer.
          */
-        size_type ro_dependency(const type_info **buffer, const std::size_t length) const ENTT_NOEXCEPT {
+        size_type ro_dependency(const type_info **buffer, const std::size_t length) const noexcept {
             return node.dependency(false, buffer, length);
         }
 
@@ -267,7 +265,7 @@ public:
          * @param length The length of the user-supplied buffer.
          * @return The number of type info objects written to the buffer.
          */
-        size_type rw_dependency(const type_info **buffer, const std::size_t length) const ENTT_NOEXCEPT {
+        size_type rw_dependency(const type_info **buffer, const std::size_t length) const noexcept {
             return node.dependency(true, buffer, length);
         }
 
@@ -275,7 +273,7 @@ public:
          * @brief Returns the number of read-only resources of a vertex.
          * @return The number of read-only resources of the vertex.
          */
-        size_type ro_count() const ENTT_NOEXCEPT {
+        size_type ro_count() const noexcept {
             return node.ro_count;
         }
 
@@ -283,7 +281,7 @@ public:
          * @brief Returns the number of writable resources of a vertex.
          * @return The number of writable resources of the vertex.
          */
-        size_type rw_count() const ENTT_NOEXCEPT {
+        size_type rw_count() const noexcept {
             return node.rw_count;
         }
 
@@ -291,7 +289,7 @@ public:
          * @brief Checks if a vertex is also a top-level one.
          * @return True if the vertex is a top-level one, false otherwise.
          */
-        bool top_level() const ENTT_NOEXCEPT {
+        bool top_level() const noexcept {
             return is_top_level;
         }
 
@@ -299,7 +297,7 @@ public:
          * @brief Returns a type info object associated with a vertex.
          * @return A properly initialized type info object.
          */
-        const type_info &info() const ENTT_NOEXCEPT {
+        const type_info &info() const noexcept {
             return *node.info;
         }
 
@@ -307,7 +305,7 @@ public:
          * @brief Returns a user defined name associated with a vertex, if any.
          * @return The user defined name associated with the vertex, if any.
          */
-        const char *name() const ENTT_NOEXCEPT {
+        const char *name() const noexcept {
             return node.name;
         }
 
@@ -315,7 +313,7 @@ public:
          * @brief Returns the function associated with a vertex.
          * @return The function associated with the vertex.
          */
-        function_type *callback() const ENTT_NOEXCEPT {
+        function_type *callback() const noexcept {
             return node.callback;
         }
 
@@ -323,7 +321,7 @@ public:
          * @brief Returns the payload associated with a vertex, if any.
          * @return The payload associated with the vertex, if any.
          */
-        const void *data() const ENTT_NOEXCEPT {
+        const void *data() const noexcept {
             return node.payload;
         }
 
@@ -331,7 +329,7 @@ public:
          * @brief Returns the list of nodes reachable from a given vertex.
          * @return The list of nodes reachable from the vertex.
          */
-        const std::vector<std::size_t> &children() const ENTT_NOEXCEPT {
+        const std::vector<std::size_t> &children() const noexcept {
             return reachable;
         }
 
@@ -340,7 +338,7 @@ public:
          * are properly instantiated before using them.
          * @param reg A valid registry.
          */
-        void prepare(basic_registry<entity_type> &reg) const {
+        void prepare(registry_type &reg) const {
             node.prepare ? node.prepare(reg) : void();
         }
 
@@ -358,10 +356,10 @@ public:
      */
     template<auto Candidate, typename... Req>
     void emplace(const char *name = nullptr) {
-        using resource_type = decltype(internal::free_function_to_resource<Req...>(Candidate));
-        constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
+        using resource_type = decltype(internal::free_function_to_resource_traits<Req...>(Candidate));
+        constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, registry_type>;
 
-        callback_type *callback = +[](const void *, basic_registry<entity_type> &reg) {
+        callback_type *callback = +[](const void *, registry_type &reg) {
             std::apply(Candidate, to_args(reg, typename resource_type::args{}));
         };
 
@@ -372,7 +370,7 @@ public:
             nullptr,
             callback,
             +[](const bool rw, const type_info **buffer, const std::size_t length) { return rw ? fill_dependencies(typename resource_type::rw{}, buffer, length) : fill_dependencies(typename resource_type::ro{}, buffer, length); },
-            +[](basic_registry<entity_type> &reg) { void(to_args(reg, typename resource_type::args{})); },
+            +[](registry_type &reg) { void(to_args(reg, typename resource_type::args{})); },
             &type_id<std::integral_constant<decltype(Candidate), Candidate>>()};
 
         track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
@@ -390,10 +388,10 @@ public:
      */
     template<auto Candidate, typename... Req, typename Type>
     void emplace(Type &value_or_instance, const char *name = nullptr) {
-        using resource_type = decltype(internal::constrained_function_to_resource<Req...>(Candidate));
-        constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
+        using resource_type = decltype(internal::constrained_function_to_resource_traits<Req...>(Candidate));
+        constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, registry_type>;
 
-        callback_type *callback = +[](const void *payload, basic_registry<entity_type> &reg) {
+        callback_type *callback = +[](const void *payload, registry_type &reg) {
             Type *curr = static_cast<Type *>(const_cast<constness_as_t<void, Type> *>(payload));
             std::apply(Candidate, std::tuple_cat(std::forward_as_tuple(*curr), to_args(reg, typename resource_type::args{})));
         };
@@ -405,7 +403,7 @@ public:
             &value_or_instance,
             callback,
             +[](const bool rw, const type_info **buffer, const std::size_t length) { return rw ? fill_dependencies(typename resource_type::rw{}, buffer, length) : fill_dependencies(typename resource_type::ro{}, buffer, length); },
-            +[](basic_registry<entity_type> &reg) { void(to_args(reg, typename resource_type::args{})); },
+            +[](registry_type &reg) { void(to_args(reg, typename resource_type::args{})); },
             &type_id<std::integral_constant<decltype(Candidate), Candidate>>()};
 
         track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
@@ -422,7 +420,7 @@ public:
      */
     template<typename... Req>
     void emplace(function_type *func, const void *payload = nullptr, const char *name = nullptr) {
-        using resource_type = internal::resource<type_list<>, type_list<Req...>>;
+        using resource_type = internal::resource_traits<type_list<>, type_list<Req...>>;
         track_dependencies(vertices.size(), true, typename resource_type::ro{}, typename resource_type::rw{});
 
         vertex_data vdata{
@@ -477,7 +475,7 @@ public:
     }
 
 private:
-    std::unordered_map<id_type, std::vector<std::pair<std::size_t, bool>>> dependencies;
+    dense_map<id_type, std::vector<std::pair<std::size_t, bool>>, identity> dependencies;
     std::vector<vertex_data> vertices;
 };
 

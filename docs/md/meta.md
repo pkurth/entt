@@ -110,9 +110,10 @@ decorated version of it. This object can be used to add the following:
   entt::meta<my_type>().ctor<int, char>().ctor<&factory>();
   ```
 
-* _Destructors_. Free functions can be set as destructors of reflected types.
-  The purpose is to give users the ability to free up resources that require
-  special treatment before an object is actually destroyed.<br/>
+* _Destructors_. Free functions and member functions can be used as destructors
+  of reflected types. The purpose is to give users the ability to free up
+  resources that require special treatment before an object is actually
+  destroyed.<br/>
   Use the `dtor` member function for this purpose:
 
   ```cpp
@@ -256,8 +257,8 @@ auto by_id = entt::resolve("reflected_type"_hs);
 auto by_type_id = entt::resolve(entt::type_id<my_type>());
 ```
 
-There exits also an overload of the `resolve` function to use to iterate all the
-reflected types at once. It returns an iterable object that can be used in a
+There exists also an overload of the `resolve` function to use to iterate all
+the reflected types at once. It returns an iterable object that can be used in a
 range-for loop:
 
 ```cpp
@@ -415,7 +416,7 @@ to case. In particular:
   ```
 
 * The `resize` member function allows to resize the wrapped container and
-  returns true in case of succes:
+  returns true in case of success:
 
   ```cpp
   const bool ok = view.resize(3u);

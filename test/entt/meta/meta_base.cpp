@@ -1,4 +1,6 @@
+#include <utility>
 #include <gtest/gtest.h>
+#include <entt/core/hashed_string.hpp>
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
 #include <entt/meta/node.hpp>
@@ -91,10 +93,10 @@ TEST_F(MetaBase, SetGetWithMutatingThis) {
     ASSERT_TRUE(any.set("value_2"_hs, 2));
     ASSERT_TRUE(any.set("value_3"_hs, 3));
 
-    ASSERT_FALSE(any.type().set("value"_hs, as_cref, 0));
-    ASSERT_FALSE(any.type().set("value_1"_hs, as_cref, 0));
-    ASSERT_FALSE(any.type().set("value_2"_hs, as_cref, 0));
-    ASSERT_FALSE(any.type().set("value_3"_hs, as_cref, 0));
+    ASSERT_FALSE(as_cref.set("value"_hs, 0));
+    ASSERT_FALSE(as_cref.set("value_1"_hs, 0));
+    ASSERT_FALSE(as_cref.set("value_2"_hs, 0));
+    ASSERT_FALSE(as_cref.set("value_3"_hs, 0));
 
     ASSERT_EQ(any.get("value"_hs).cast<int>(), 42);
     ASSERT_EQ(any.get("value_1"_hs).cast<const int>(), 1);

@@ -1,5 +1,6 @@
 #include <utility>
 #include <gtest/gtest.h>
+#include <entt/core/hashed_string.hpp>
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
 #include <entt/meta/node.hpp>
@@ -12,7 +13,11 @@ struct clazz_t {
         return value;
     }
 
-    int value;
+    bool to_bool() const {
+        return (value != 0);
+    }
+
+    int value{};
 };
 
 double conv_to_double(const clazz_t &instance) {
@@ -26,6 +31,7 @@ struct MetaConv: ::testing::Test {
         entt::meta<clazz_t>()
             .type("clazz"_hs)
             .conv<int>()
+            .conv<&clazz_t::to_bool>()
             .conv<conv_to_double>();
     }
 
@@ -39,14 +45,17 @@ TEST_F(MetaConv, Functionalities) {
     any.cast<clazz_t &>().value = 42;
 
     const auto as_int = std::as_const(any).allow_cast<int>();
+    const auto as_bool = std::as_const(any).allow_cast<bool>();
     const auto as_double = std::as_const(any).allow_cast<double>();
 
     ASSERT_FALSE(any.allow_cast<char>());
 
     ASSERT_TRUE(as_int);
+    ASSERT_TRUE(as_bool);
     ASSERT_TRUE(as_double);
 
-    ASSERT_EQ(as_int.cast<int>(), any.cast<clazz_t &>().value);
+    ASSERT_EQ(as_int.cast<int>(), any.cast<clazz_t &>().operator int());
+    ASSERT_EQ(as_bool.cast<bool>(), any.cast<clazz_t &>().to_bool());
     ASSERT_EQ(as_double.cast<double>(), conv_to_double(any.cast<clazz_t &>()));
 }
 
@@ -57,5 +66,6 @@ TEST_F(MetaConv, ReRegistration) {
 
     ASSERT_NE(node->conv, nullptr);
     ASSERT_NE(node->conv->next, nullptr);
-    ASSERT_EQ(node->conv->next->next, nullptr);
+    ASSERT_NE(node->conv->next->next, nullptr);
+    ASSERT_EQ(node->conv->next->next->next, nullptr);
 }

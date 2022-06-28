@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <map>
 #include <queue>
 #include <tuple>
@@ -146,7 +147,7 @@ TEST(Snapshot, Dump) {
     ASSERT_EQ(registry.get<char>(e3), '0');
     ASSERT_TRUE(registry.all_of<a_component>(e3));
 
-    ASSERT_TRUE(registry.empty<another_component>());
+    ASSERT_TRUE(registry.storage<another_component>().empty());
 }
 
 TEST(Snapshot, Partial) {
@@ -308,7 +309,7 @@ TEST(Snapshot, Continuous) {
     });
 
     src.view<map_component>().each([&entities](auto, auto &map_component) {
-        for(size_t i = 0; i < entities.size(); ++i) {
+        for(std::size_t i = 0; i < entities.size(); ++i) {
             map_component.keys.insert({entities[i], int(i)});
             map_component.values.insert({int(i), entities[i]});
             map_component.both.insert({entities[entities.size() - i - 1], entities[i]});
@@ -377,7 +378,7 @@ TEST(Snapshot, Continuous) {
 
     dst.view<noncopyable_component>().each([&dst, &noncopyable_component_cnt](auto, const auto &component) {
         ++noncopyable_component_cnt;
-        ASSERT_EQ(component.value, static_cast<int>(dst.size<noncopyable_component>() - noncopyable_component_cnt - 1u));
+        ASSERT_EQ(component.value, static_cast<int>(dst.storage<noncopyable_component>().size() - noncopyable_component_cnt - 1u));
     });
 
     src.view<another_component>().each([](auto, auto &component) {
@@ -400,11 +401,11 @@ TEST(Snapshot, Continuous) {
 
     ASSERT_EQ(size, dst.size());
 
-    ASSERT_EQ(dst.size<a_component>(), a_component_cnt);
-    ASSERT_EQ(dst.size<another_component>(), another_component_cnt);
-    ASSERT_EQ(dst.size<what_a_component>(), what_a_component_cnt);
-    ASSERT_EQ(dst.size<map_component>(), map_component_cnt);
-    ASSERT_EQ(dst.size<noncopyable_component>(), noncopyable_component_cnt);
+    ASSERT_EQ(dst.storage<a_component>().size(), a_component_cnt);
+    ASSERT_EQ(dst.storage<another_component>().size(), another_component_cnt);
+    ASSERT_EQ(dst.storage<what_a_component>().size(), what_a_component_cnt);
+    ASSERT_EQ(dst.storage<map_component>().size(), map_component_cnt);
+    ASSERT_EQ(dst.storage<noncopyable_component>().size(), noncopyable_component_cnt);
 
     dst.view<another_component>().each([](auto, auto &component) {
         ASSERT_EQ(component.value, component.key < 0 ? -1 : (2 * component.key));
@@ -466,7 +467,7 @@ TEST(Snapshot, Continuous) {
     });
 
     dst.clear<a_component>();
-    a_component_cnt = src.size<a_component>();
+    a_component_cnt = src.storage<a_component>().size();
 
     entt::snapshot{src}.entities(output).component<a_component, what_a_component, map_component, another_component>(output);
 
@@ -480,7 +481,7 @@ TEST(Snapshot, Continuous) {
             &map_component::both)
         .orphans();
 
-    ASSERT_EQ(dst.size<a_component>(), a_component_cnt);
+    ASSERT_EQ(dst.storage<a_component>().size(), a_component_cnt);
 
     src.clear<a_component>();
     a_component_cnt = {};
@@ -497,7 +498,7 @@ TEST(Snapshot, Continuous) {
             &map_component::both)
         .orphans();
 
-    ASSERT_EQ(dst.size<a_component>(), a_component_cnt);
+    ASSERT_EQ(dst.storage<a_component>().size(), a_component_cnt);
 }
 
 TEST(Snapshot, MoreOnShrink) {

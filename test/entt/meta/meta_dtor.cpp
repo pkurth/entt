@@ -1,5 +1,6 @@
 #include <utility>
 #include <gtest/gtest.h>
+#include <entt/core/hashed_string.hpp>
 #include <entt/meta/factory.hpp>
 #include <entt/meta/meta.hpp>
 #include <entt/meta/node.hpp>
@@ -14,7 +15,7 @@ struct clazz_t {
         --counter;
     }
 
-    static void destroy_incr(clazz_t &) {
+    void destroy_incr() const {
         ++counter;
     }
 
@@ -104,7 +105,7 @@ TEST_F(MetaDtor, ReRegistration) {
 
     ASSERT_NE(node->dtor, nullptr);
 
-    entt::meta<clazz_t>().dtor<clazz_t::destroy_incr>();
+    entt::meta<clazz_t>().dtor<&clazz_t::destroy_incr>();
     entt::resolve<clazz_t>().construct().reset();
 
     ASSERT_EQ(clazz_t::counter, 2);

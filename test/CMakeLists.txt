@@ -3,6 +3,12 @@
 #
 
 include(FetchContent)
+include(CheckCXXSourceCompiles)
+
+check_cxx_source_compiles("
+    #include<version>
+    int main() { return 0; }
+" ENTT_HAS_HEADER_VERSION)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -13,7 +19,7 @@ else()
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG master
+        GIT_TAG main
         GIT_SHALLOW 1
     )
 
@@ -67,6 +73,14 @@ function(SETUP_TARGET TARGET_NAME)
             NOMINMAX
             ${ARGN}
     )
+
+    if(ENTT_HAS_HEADER_VERSION)
+        target_compile_definitions(
+            ${TARGET_NAME}
+            PRIVATE
+                ENTT_HAS_HEADER_VERSION
+        )
+    endif()
 endfunction()
 
 add_library(odr OBJECT odr.cpp)
@@ -105,6 +119,7 @@ endif()
 
 if(ENTT_BUILD_EXAMPLE)
     SETUP_BASIC_TEST(custom_identifier example/custom_identifier.cpp)
+    SETUP_BASIC_TEST(entity_copy example/entity_copy.cpp)
     SETUP_BASIC_TEST(signal_less example/signal_less.cpp)
 endif()
 
@@ -159,6 +174,15 @@ if(ENTT_BUILD_SNAPSHOT)
     target_include_directories(cereal PRIVATE ${cereal_INCLUDE_DIR})
 endif()
 
+# Test config
+
+SETUP_BASIC_TEST(version entt/config/version.cpp)
+
+# Test container
+
+SETUP_BASIC_TEST(dense_map entt/container/dense_map.cpp)
+SETUP_BASIC_TEST(dense_set entt/container/dense_set.cpp)
+
 # Test core
 
 SETUP_BASIC_TEST(algorithm entt/core/algorithm.cpp)
@@ -168,6 +192,7 @@ SETUP_BASIC_TEST(enum entt/core/enum.cpp)
 SETUP_BASIC_TEST(family entt/core/family.cpp)
 SETUP_BASIC_TEST(hashed_string entt/core/hashed_string.cpp)
 SETUP_BASIC_TEST(ident entt/core/ident.cpp)
+SETUP_BASIC_TEST(iterator entt/core/iterator.cpp)
 SETUP_BASIC_TEST(memory entt/core/memory.cpp)
 SETUP_BASIC_TEST(monostate entt/core/monostate.cpp)
 SETUP_BASIC_TEST(tuple entt/core/tuple.cpp)
@@ -177,21 +202,26 @@ SETUP_BASIC_TEST(utility entt/core/utility.cpp)
 
 # Test entity
 
+SETUP_BASIC_TEST(component entt/entity/component.cpp)
 SETUP_BASIC_TEST(entity entt/entity/entity.cpp)
 SETUP_BASIC_TEST(group entt/entity/group.cpp)
 SETUP_BASIC_TEST(handle entt/entity/handle.cpp)
 SETUP_BASIC_TEST(helper entt/entity/helper.cpp)
 SETUP_BASIC_TEST(observer entt/entity/observer.cpp)
-SETUP_BASIC_TEST(poly_storage entt/entity/poly_storage.cpp)
 SETUP_BASIC_TEST(organizer entt/entity/organizer.cpp)
 SETUP_BASIC_TEST(registry entt/entity/registry.cpp)
-SETUP_BASIC_TEST(registry_no_eto entt/entity/registry_no_eto.cpp ENTT_NO_ETO)
 SETUP_BASIC_TEST(runtime_view entt/entity/runtime_view.cpp)
 SETUP_BASIC_TEST(sigh_storage_mixin entt/entity/sigh_storage_mixin.cpp)
 SETUP_BASIC_TEST(snapshot entt/entity/snapshot.cpp)
 SETUP_BASIC_TEST(sparse_set entt/entity/sparse_set.cpp)
 SETUP_BASIC_TEST(storage entt/entity/storage.cpp)
 SETUP_BASIC_TEST(view entt/entity/view.cpp)
+
+# Test graph
+
+SETUP_BASIC_TEST(adjacency_matrix entt/graph/adjacency_matrix.cpp)
+SETUP_BASIC_TEST(dot entt/graph/dot.cpp)
+SETUP_BASIC_TEST(flow entt/graph/flow.cpp)
 
 # Test locator
 
@@ -213,11 +243,11 @@ SETUP_BASIC_TEST(meta_prop entt/meta/meta_prop.cpp)
 SETUP_BASIC_TEST(meta_range entt/meta/meta_range.cpp)
 SETUP_BASIC_TEST(meta_template entt/meta/meta_template.cpp)
 SETUP_BASIC_TEST(meta_type entt/meta/meta_type.cpp)
+SETUP_BASIC_TEST(meta_utility entt/meta/meta_utility.cpp)
 
 # Test poly
 
-SETUP_BASIC_TEST(poly_deduced entt/poly/poly_deduced.cpp)
-SETUP_BASIC_TEST(poly_defined entt/poly/poly_defined.cpp)
+SETUP_BASIC_TEST(poly entt/poly/poly.cpp)
 
 # Test process
 
@@ -227,6 +257,8 @@ SETUP_BASIC_TEST(scheduler entt/process/scheduler.cpp)
 # Test resource
 
 SETUP_BASIC_TEST(resource entt/resource/resource.cpp)
+SETUP_BASIC_TEST(resource_cache entt/resource/resource_cache.cpp)
+SETUP_BASIC_TEST(resource_loader entt/resource/resource_loader.cpp)
 
 # Test signal
 
