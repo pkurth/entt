@@ -14,7 +14,7 @@
 #include "../core/type_traits.hpp"
 #include "../core/utility.hpp"
 #include "adl_pointer.hpp"
-#include "ctx.hpp"
+#include "context.hpp"
 #include "fwd.hpp"
 #include "node.hpp"
 #include "range.hpp"
@@ -49,8 +49,7 @@ public:
           size_fn{&meta_sequence_container_traits<Type>::size},
           resize_fn{&meta_sequence_container_traits<Type>::resize},
           iter_fn{&meta_sequence_container_traits<Type>::iter},
-          insert_fn{&meta_sequence_container_traits<Type>::insert},
-          erase_fn{&meta_sequence_container_traits<Type>::erase},
+          insert_or_erase_fn{&meta_sequence_container_traits<Type>::insert_or_erase},
           storage{std::move(instance)} {}
 
     [[nodiscard]] inline meta_type value_type() const noexcept;
@@ -69,8 +68,7 @@ private:
     size_type (*size_fn)(const any &) noexcept = nullptr;
     bool (*resize_fn)(any &, size_type) = nullptr;
     iterator (*iter_fn)(any &, const bool) = nullptr;
-    iterator (*insert_fn)(any &, const std::ptrdiff_t, meta_any &) = nullptr;
-    iterator (*erase_fn)(any &, const std::ptrdiff_t) = nullptr;
+    iterator (*insert_or_erase_fn)(any &, const any &, meta_any &) = nullptr;
     any storage{};
 };
 
@@ -101,8 +99,7 @@ public:
           size_fn{&meta_associative_container_traits<Type>::size},
           clear_fn{&meta_associative_container_traits<Type>::clear},
           iter_fn{&meta_associative_container_traits<Type>::iter},
-          insert_fn{&meta_associative_container_traits<Type>::insert},
-          erase_fn{&meta_associative_container_traits<Type>::erase},
+          insert_or_erase_fn{&meta_associative_container_traits<Type>::insert_or_erase},
           find_fn{&meta_associative_container_traits<Type>::find},
           storage{std::move(instance)} {
         if constexpr(!meta_associative_container_traits<Type>::key_only) {
@@ -119,7 +116,7 @@ public:
     [[nodiscard]] inline iterator begin();
     [[nodiscard]] inline iterator end();
     inline bool insert(meta_any, meta_any);
-    inline bool erase(meta_any);
+    inline size_type erase(meta_any);
     [[nodiscard]] inline iterator find(meta_any);
     [[nodiscard]] inline explicit operator bool() const noexcept;
 
@@ -131,8 +128,7 @@ private:
     size_type (*size_fn)(const any &) noexcept = nullptr;
     bool (*clear_fn)(any &) = nullptr;
     iterator (*iter_fn)(any &, const bool) = nullptr;
-    bool (*insert_fn)(any &, meta_any &, meta_any &) = nullptr;
-    bool (*erase_fn)(any &, meta_any &) = nullptr;
+    size_type (*insert_or_erase_fn)(any &, meta_any &, meta_any &) = nullptr;
     iterator (*find_fn)(any &, meta_any &) = nullptr;
     any storage{};
 };
@@ -783,7 +779,7 @@ struct meta_data {
      * @return An iterable range to visit registered meta properties.
      */
     [[nodiscard]] meta_range<meta_prop> prop() const noexcept {
-        return node->prop;
+        return {node->prop, nullptr};
     }
 
     /**
@@ -902,7 +898,7 @@ struct meta_func {
 
     /*! @copydoc meta_data::prop */
     [[nodiscard]] meta_range<meta_prop> prop() const noexcept {
-        return node->prop;
+        return {node->prop, nullptr};
     }
 
     /**
@@ -934,14 +930,14 @@ private:
 
 /*! @brief Opaque wrapper for types. */
 class meta_type {
-    template<auto Member, typename Pred>
-    [[nodiscard]] std::decay_t<decltype(std::declval<internal::meta_type_node>().*Member)> lookup(meta_any *const args, const typename internal::meta_type_node::size_type sz, Pred pred) const {
+    template<auto Member, typename... Check>
+    [[nodiscard]] std::decay_t<decltype(std::declval<internal::meta_type_node>().*Member)> lookup(meta_any *const args, const typename internal::meta_type_node::size_type sz, Check... check) const {
         std::decay_t<decltype(node->*Member)> candidate{};
         size_type extent{sz + 1u};
         bool ambiguous{};
 
         for(auto *curr = (node->*Member); curr; curr = curr->next) {
-            if(pred(curr) && curr->arity == sz) {
+            if(((curr->id == check) && ... && (curr->arity == sz))) {
                 size_type direct{};
                 size_type ext{};
 
@@ -1150,7 +1146,7 @@ public:
      * @return An iterable range to visit registered top-level base meta types.
      */
     [[nodiscard]] meta_range<meta_type, internal::meta_base_node> base() const noexcept {
-        return node->base;
+        return {node->base, nullptr};
     }
 
     /**
@@ -1167,7 +1163,7 @@ public:
      * @return An iterable range to visit registered top-level meta data.
      */
     [[nodiscard]] meta_range<meta_data> data() const noexcept {
-        return node->data;
+        return {node->data, nullptr};
     }
 
     /**
@@ -1187,7 +1183,7 @@ public:
      * @return An iterable range to visit registered top-level functions.
      */
     [[nodiscard]] meta_range<meta_func> func() const noexcept {
-        return node->func;
+        return {node->func, nullptr};
     }
 
     /**
@@ -1216,7 +1212,7 @@ public:
      * @return A wrapper containing the new instance, if any.
      */
     [[nodiscard]] meta_any construct(meta_any *const args, const size_type sz) const {
-        const auto *candidate = lookup<&node_type::ctor>(args, sz, [](const auto *) { return true; });
+        const auto *candidate = lookup<&node_type::ctor>(args, sz);
         return candidate ? candidate->invoke(args) : ((!sz && node->default_constructor) ? node->default_constructor() : meta_any{});
     }
 
@@ -1236,6 +1232,20 @@ public:
     }
 
     /**
+     * @brief Wraps an opaque element of the underlying type.
+     * @param element A valid pointer to an element of the underlying type.
+     * @return A wrapper that references the given instance.
+     */
+    meta_any from_void(void *element) const {
+        return (element && node->from_void) ? node->from_void(element, nullptr) : meta_any{};
+    }
+
+    /*! @copydoc from_void */
+    meta_any from_void(const void *element) const {
+        return (element && node->from_void) ? node->from_void(nullptr, element) : meta_any{};
+    }
+
+    /**
      * @brief Invokes a function given an identifier, if possible.
      *
      * It must be possible to cast the instance to the parent type of the member
@@ -1250,10 +1260,10 @@ public:
      * @return A wrapper containing the returned value, if any.
      */
     meta_any invoke(const id_type id, meta_handle instance, meta_any *const args, const size_type sz) const {
-        const auto *candidate = lookup<&node_type::func>(args, sz, [id](const auto *curr) { return curr->id == id; });
+        const auto *candidate = lookup<&node_type::func>(args, sz, id);
 
         for(auto it = base().begin(), last = base().end(); it != last && !candidate; ++it) {
-            candidate = it->lookup<&node_type::func>(args, sz, [id](const auto *curr) { return curr->id == id; });
+            candidate = it->lookup<&node_type::func>(args, sz, id);
         }
 
         return candidate ? candidate->invoke(std::move(instance), args) : meta_any{};
@@ -1316,7 +1326,7 @@ public:
      * @return An iterable range to visit registered top-level meta properties.
      */
     [[nodiscard]] meta_range<meta_prop> prop() const noexcept {
-        return node->prop;
+        return {node->prop, nullptr};
     }
 
     /**
@@ -1457,11 +1467,25 @@ inline bool meta_any::assign(meta_any &&other) {
 class meta_sequence_container::meta_iterator final {
     friend class meta_sequence_container;
 
-    using deref_fn_type = meta_any(const any &, const std::ptrdiff_t);
+    enum class operation : std::uint8_t {
+        incr,
+        deref
+    };
+
+    using vtable_type = void(const operation, const any &, const std::ptrdiff_t, meta_any *);
 
     template<typename It>
-    static meta_any deref_fn(const any &value, const std::ptrdiff_t pos) {
-        return meta_any{std::in_place_type<typename std::iterator_traits<It>::reference>, any_cast<const It &>(value)[pos]};
+    static void basic_vtable(const operation op, const any &value, const std::ptrdiff_t offset, meta_any *other) {
+        switch(op) {
+        case operation::incr: {
+            auto &it = any_cast<It &>(const_cast<any &>(value));
+            it = std::next(it, offset);
+        } break;
+        case operation::deref: {
+            const auto &it = any_cast<const It &>(value);
+            other->emplace<decltype(*it)>(*it);
+        } break;
+        }
     }
 
 public:
@@ -1472,38 +1496,40 @@ public:
     using iterator_category = std::input_iterator_tag;
 
     constexpr meta_iterator() noexcept
-        : deref{},
-          offset{},
+        : vtable{},
           handle{} {}
 
-    template<typename Type>
-    explicit meta_iterator(Type &cont, const difference_type init) noexcept
-        : deref{&deref_fn<decltype(cont.begin())>},
-          offset{init},
-          handle{cont.begin()} {}
+    template<typename It>
+    explicit meta_iterator(It iter) noexcept
+        : vtable{&basic_vtable<It>},
+          handle{std::move(iter)} {}
 
     meta_iterator &operator++() noexcept {
-        return ++offset, *this;
+        vtable(operation::incr, handle, 1, nullptr);
+        return *this;
     }
 
     meta_iterator operator++(int value) noexcept {
         meta_iterator orig = *this;
-        offset += ++value;
+        vtable(operation::incr, handle, ++value, nullptr);
         return orig;
     }
 
     meta_iterator &operator--() noexcept {
-        return --offset, *this;
+        vtable(operation::incr, handle, -1, nullptr);
+        return *this;
     }
 
     meta_iterator operator--(int value) noexcept {
         meta_iterator orig = *this;
-        offset -= ++value;
+        vtable(operation::incr, handle, --value, nullptr);
         return orig;
     }
 
     [[nodiscard]] reference operator*() const {
-        return deref(handle, offset);
+        reference other;
+        vtable(operation::deref, handle, 0, &other);
+        return other;
     }
 
     [[nodiscard]] pointer operator->() const {
@@ -1515,7 +1541,7 @@ public:
     }
 
     [[nodiscard]] bool operator==(const meta_iterator &other) const noexcept {
-        return offset == other.offset;
+        return handle == other.handle;
     }
 
     [[nodiscard]] bool operator!=(const meta_iterator &other) const noexcept {
@@ -1523,8 +1549,7 @@ public:
     }
 
 private:
-    deref_fn_type *deref;
-    difference_type offset;
+    vtable_type *vtable;
     any handle;
 };
 
@@ -1668,7 +1693,7 @@ inline bool meta_sequence_container::clear() {
  * @return A possibly invalid iterator to the inserted element.
  */
 inline meta_sequence_container::iterator meta_sequence_container::insert(iterator it, meta_any value) {
-    return insert_fn(storage, it.offset, value);
+    return insert_or_erase_fn(storage, it.handle, value);
 }
 
 /**
@@ -1677,7 +1702,7 @@ inline meta_sequence_container::iterator meta_sequence_container::insert(iterato
  * @return A possibly invalid iterator following the last removed element.
  */
 inline meta_sequence_container::iterator meta_sequence_container::erase(iterator it) {
-    return erase_fn(storage, it.offset);
+    return insert(std::move(it), {});
 }
 
 /**
@@ -1755,8 +1780,8 @@ inline bool meta_associative_container::clear() {
  * @param value The value of the element to insert.
  * @return A bool denoting whether the insertion took place.
  */
-inline bool meta_associative_container::insert(meta_any key, meta_any value = {}) {
-    return insert_fn(storage, key, value);
+inline bool meta_associative_container::insert(meta_any key, meta_any value = std::in_place_type<void>) {
+    return (insert_or_erase_fn(storage, key, value) != 0u);
 }
 
 /**
@@ -1764,8 +1789,8 @@ inline bool meta_associative_container::insert(meta_any key, meta_any value = {}
  * @param key The key of the element to remove.
  * @return A bool denoting whether the removal took place.
  */
-inline bool meta_associative_container::erase(meta_any key) {
-    return erase_fn(storage, key);
+inline meta_associative_container::size_type meta_associative_container::erase(meta_any key) {
+    return insert(std::move(key), {});
 }
 
 /**

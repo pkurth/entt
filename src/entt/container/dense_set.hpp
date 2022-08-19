@@ -1,7 +1,6 @@
 #ifndef ENTT_CONTAINER_DENSE_SET_HPP
 #define ENTT_CONTAINER_DENSE_SET_HPP
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -280,8 +279,8 @@ class dense_set {
 
     void move_and_pop(const std::size_t pos) {
         if(const auto last = size() - 1u; pos != last) {
-            packed.first()[pos] = std::move(packed.first().back());
             size_type *curr = sparse.first().data() + value_to_bucket(packed.first().back().second);
+            packed.first()[pos] = std::move(packed.first().back());
             for(; *curr != last; curr = &packed.first()[*curr].first) {}
             *curr = pos;
         }
@@ -319,7 +318,7 @@ public:
 
     /*! @brief Default constructor. */
     dense_set()
-        : dense_set(minimum_capacity) {}
+        : dense_set{minimum_capacity} {}
 
     /**
      * @brief Constructs an empty container with a given allocator.
@@ -376,7 +375,7 @@ public:
           threshold{other.threshold} {}
 
     /*! @brief Default move constructor. */
-    dense_set(dense_set &&) = default;
+    dense_set(dense_set &&) noexcept(std::is_nothrow_move_constructible_v<compressed_pair<sparse_container_type, hasher>> &&std::is_nothrow_move_constructible_v<compressed_pair<packed_container_type, key_equal>>) = default;
 
     /**
      * @brief Allocator-extended move constructor.
@@ -398,7 +397,7 @@ public:
      * @brief Default move assignment operator.
      * @return This container.
      */
-    dense_set &operator=(dense_set &&) = default;
+    dense_set &operator=(dense_set &&) noexcept(std::is_nothrow_move_assignable_v<compressed_pair<sparse_container_type, hasher>> &&std::is_nothrow_move_assignable_v<compressed_pair<packed_container_type, key_equal>>) = default;
 
     /**
      * @brief Returns the associated allocator.
@@ -772,12 +771,16 @@ public:
      * @param count New number of buckets.
      */
     void rehash(const size_type count) {
-        auto value = (std::max)(count, minimum_capacity);
-        value = (std::max)(value, static_cast<size_type>(size() / max_load_factor()));
+        auto value = count > minimum_capacity ? count : minimum_capacity;
+        const auto cap = static_cast<size_type>(size() / max_load_factor());
+        value = value > cap ? value : cap;
 
         if(const auto sz = next_power_of_two(value); sz != bucket_count()) {
             sparse.first().resize(sz);
-            std::fill(sparse.first().begin(), sparse.first().end(), (std::numeric_limits<size_type>::max)());
+
+            for(auto &&elem: sparse.first()) {
+                elem = std::numeric_limits<size_type>::max();
+            }
 
             for(size_type pos{}, last = size(); pos < last; ++pos) {
                 const auto index = value_to_bucket(packed.first()[pos].second);

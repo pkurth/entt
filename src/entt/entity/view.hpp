@@ -1,7 +1,6 @@
 #ifndef ENTT_ENTITY_VIEW_HPP
 #define ENTT_ENTITY_VIEW_HPP
 
-#include <algorithm>
 #include <array>
 #include <iterator>
 #include <tuple>
@@ -256,23 +255,23 @@ public:
 
     /**
      * @brief Constructs a multi-type view from a set of storage classes.
-     * @param get The storage for the types to iterate.
+     * @param value The storage for the types to iterate.
      * @param exclude The storage for the types used to filter the view.
      */
-    basic_view(Get &...get, Exclude &...exclude) noexcept
-        : pools{&get...},
+    basic_view(Get &...value, Exclude &...exclude) noexcept
+        : pools{&value...},
           filter{&exclude...},
-          view{(std::min)({&static_cast<const base_type &>(get)...}, [](auto *lhs, auto *rhs) { return lhs->size() < rhs->size(); })} {}
+          view{[](const base_type *first, const auto *...other) { ((first = other->size() < first->size() ? other : first), ...); return first; }(&value...)} {}
 
     /**
      * @brief Constructs a multi-type view from a set of storage classes.
-     * @param get The storage for the types to iterate.
+     * @param value The storage for the types to iterate.
      * @param exclude The storage for the types used to filter the view.
      */
-    basic_view(std::tuple<Get &...> get, std::tuple<Exclude &...> exclude = {}) noexcept
-        : pools{std::apply([](auto &...curr) { return std::make_tuple(&curr...); }, get)},
+    basic_view(std::tuple<Get &...> value, std::tuple<Exclude &...> exclude = {}) noexcept
+        : pools{std::apply([](auto &...curr) { return std::make_tuple(&curr...); }, value)},
           filter{std::apply([](auto &...curr) { return std::make_tuple(&curr...); }, exclude)},
-          view{std::apply([](const auto &...curr) { return (std::min)({&static_cast<const base_type &>(curr)...}, [](auto *lhs, auto *rhs) { return lhs->size() < rhs->size(); }); }, get)} {}
+          view{std::apply([](const base_type *first, const auto *...other) { ((first = other->size() < first->size() ? other : first), ...); return first; }, pools)} {}
 
     /**
      * @brief Creates a new view driven by a given component in its iterations.
@@ -428,8 +427,6 @@ public:
      */
     template<typename... Type>
     [[nodiscard]] decltype(auto) get(const entity_type entt) const {
-        ENTT_ASSERT(contains(entt), "View does not contain entity");
-
         if constexpr(sizeof...(Type) == 0) {
             return std::apply([entt](auto *...curr) { return std::tuple_cat(curr->get_as_tuple(entt)...); }, pools);
         } else if constexpr(sizeof...(Type) == 1) {
@@ -453,8 +450,6 @@ public:
      */
     template<std::size_t First, std::size_t... Other>
     [[nodiscard]] decltype(auto) get(const entity_type entt) const {
-        ENTT_ASSERT(contains(entt), "View does not contain entity");
-
         if constexpr(sizeof...(Other) == 0) {
             return std::get<First>(pools)->get(entt);
         } else {
@@ -560,8 +555,7 @@ public:
     /*! @brief Default constructor to use to create empty, invalid views. */
     basic_view() noexcept
         : pools{},
-          filter{},
-          view{} {}
+          filter{} {}
 
     /**
      * @brief Constructs a single-type view from a storage class.
@@ -569,8 +563,7 @@ public:
      */
     basic_view(Get &ref) noexcept
         : pools{&ref},
-          filter{},
-          view{&ref} {}
+          filter{} {}
 
     /**
      * @brief Constructs a single-type view from a storage class.
@@ -584,7 +577,7 @@ public:
      * @return The leading storage of the view.
      */
     const base_type &handle() const noexcept {
-        return *view;
+        return *std::get<0>(pools);
     }
 
     /**
@@ -613,7 +606,7 @@ public:
      * @return Number of entities that have the given component.
      */
     [[nodiscard]] size_type size() const noexcept {
-        return view->size();
+        return handle().size();
     }
 
     /**
@@ -621,7 +614,7 @@ public:
      * @return True if the view is empty, false otherwise.
      */
     [[nodiscard]] bool empty() const noexcept {
-        return view->empty();
+        return handle().empty();
     }
 
     /**
@@ -633,7 +626,7 @@ public:
      * @return An iterator to the first entity of the view.
      */
     [[nodiscard]] iterator begin() const noexcept {
-        return view->begin();
+        return handle().begin();
     }
 
     /**
@@ -646,7 +639,7 @@ public:
      * @return An iterator to the entity following the last entity of the view.
      */
     [[nodiscard]] iterator end() const noexcept {
-        return view->end();
+        return handle().end();
     }
 
     /**
@@ -658,7 +651,7 @@ public:
      * @return An iterator to the first entity of the reversed view.
      */
     [[nodiscard]] reverse_iterator rbegin() const noexcept {
-        return view->rbegin();
+        return handle().rbegin();
     }
 
     /**
@@ -673,7 +666,7 @@ public:
      * reversed view.
      */
     [[nodiscard]] reverse_iterator rend() const noexcept {
-        return view->rend();
+        return handle().rend();
     }
 
     /**
@@ -701,7 +694,7 @@ public:
      * iterator otherwise.
      */
     [[nodiscard]] iterator find(const entity_type entt) const noexcept {
-        return contains(entt) ? view->find(entt) : end();
+        return contains(entt) ? handle().find(entt) : end();
     }
 
     /**
@@ -727,7 +720,7 @@ public:
      * @return True if the view is properly initialized, false otherwise.
      */
     [[nodiscard]] explicit operator bool() const noexcept {
-        return view != nullptr;
+        return std::get<0>(pools) != nullptr;
     }
 
     /**
@@ -736,7 +729,7 @@ public:
      * @return True if the view contains the given entity, false otherwise.
      */
     [[nodiscard]] bool contains(const entity_type entt) const noexcept {
-        return view->contains(entt);
+        return handle().contains(entt);
     }
 
     /**
@@ -752,8 +745,6 @@ public:
      */
     template<typename... Type>
     [[nodiscard]] decltype(auto) get(const entity_type entt) const {
-        ENTT_ASSERT(contains(entt), "View does not contain entity");
-
         if constexpr(sizeof...(Type) == 0) {
             return std::get<0>(pools)->get_as_tuple(entt);
         } else {
@@ -765,7 +756,6 @@ public:
     /*! @copydoc get */
     template<std::size_t Index>
     [[nodiscard]] decltype(auto) get(const entity_type entt) const {
-        ENTT_ASSERT(contains(entt), "View does not contain entity");
         return std::get<0>(pools)->get(entt);
     }
 
@@ -802,7 +792,7 @@ public:
                 func(component);
             }
         } else if constexpr(std::is_invocable_v<Func, entity_type>) {
-            for(auto entity: *view) {
+            for(auto entity: *this) {
                 func(entity);
             }
         } else {
@@ -841,7 +831,6 @@ public:
 private:
     std::tuple<Get *> pools;
     std::tuple<> filter;
-    const base_type *view;
 };
 
 /**

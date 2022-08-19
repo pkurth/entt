@@ -1,8 +1,8 @@
 #ifndef ENTT_SIGNAL_DISPATCHER_HPP
 #define ENTT_SIGNAL_DISPATCHER_HPP
 
-#include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -123,7 +123,7 @@ class basic_dispatcher {
 
     using alloc_traits = std::allocator_traits<Allocator>;
     using container_allocator = typename alloc_traits::template rebind_alloc<std::pair<const key_type, mapped_type>>;
-    using container_type = dense_map<id_type, mapped_type, identity, std::equal_to<id_type>, container_allocator>;
+    using container_type = dense_map<key_type, mapped_type, identity, std::equal_to<key_type>, container_allocator>;
 
     template<typename Type>
     [[nodiscard]] handler_type<Type> &assure(const id_type id) {
@@ -136,18 +136,6 @@ class basic_dispatcher {
         }
 
         return static_cast<handler_type<Type> &>(*ptr);
-    }
-
-    template<typename Type>
-    [[nodiscard]] const handler_type<Type> *assure(const id_type id) const {
-        static_assert(std::is_same_v<Type, std::decay_t<Type>>, "Non-decayed types not allowed");
-        auto &container = pools.first();
-
-        if(const auto it = container.find(id); it != container.end()) {
-            return static_cast<const handler_type<Type> *>(it->second.get());
-        }
-
-        return nullptr;
     }
 
 public:
@@ -217,8 +205,11 @@ public:
      */
     template<typename Type>
     size_type size(const id_type id = type_hash<Type>::value()) const noexcept {
-        const auto *cpool = assure<Type>(id);
-        return cpool ? cpool->size() : 0u;
+        if(auto it = pools.first().find(id); it != pools.first().cend()) {
+            return it->second->size();
+        }
+
+        return 0u;
     }
 
     /**
